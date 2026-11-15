@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, Link, useNavigate } from 'react-router-dom';
 
 import { useAuth } from './auth/AuthContext';
 import { HomePage } from './pages/HomePage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { TicketCreatePage } from './pages/TicketCreatePage';
@@ -9,7 +10,7 @@ import { TicketDetailPage } from './pages/TicketDetailPage';
 import { TicketsPage } from './pages/TicketsPage';
 
 export function App() {
-  const { status, session, signOut } = useAuth();
+  const { status, session, signOut, hasPermission } = useAuth();
   const navigate = useNavigate();
 
   async function handleSignOut(): Promise<void> {
@@ -34,7 +35,7 @@ export function App() {
       <div className="app">
         <header className="app-header">
           <span className="brand">企业客服工单平台</span>
-          <span className="phase-badge">I2 工单核心</span>
+          <span className="phase-badge">I3 知识库</span>
         </header>
         <main className="app-main">
           <Routes>
@@ -52,7 +53,12 @@ export function App() {
         <Link to="/" className="brand">
           企业客服工单平台
         </Link>
-        <span className="phase-badge">I2 工单核心</span>
+        <span className="phase-badge">I3 知识库</span>
+        {hasPermission('kb', 'read') ? (
+          <Link to="/knowledge" className="header-link" data-testid="nav-knowledge">
+            知识库
+          </Link>
+        ) : null}
         <div className="header-spacer" />
         {session !== null ? (
           <span className="header-tenant" data-testid="header-tenant">
@@ -83,6 +89,7 @@ export function App() {
           <Route path="/tickets" element={<TicketsPage />} />
           <Route path="/tickets/new" element={<TicketCreatePage />} />
           <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
+          <Route path="/knowledge" element={<KnowledgePage />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

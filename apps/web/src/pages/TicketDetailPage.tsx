@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import type {
+  KbArticleSummary,
   MessageVisibility,
+  ReplyTemplateSummary,
   TicketAuditEntry,
   TicketDetailResponse,
   TicketPriority,
@@ -13,9 +15,13 @@ import { useAuth } from '../auth/AuthContext';
 import {
   ApiError,
   appendTicketMessage,
+  fetchKbArticle,
+  fetchKbArticles,
+  fetchReplyTemplates,
   fetchTicket,
   fetchTicketAudit,
   newIdempotencyKey,
+  renderReplyTemplate,
   updateTicket,
 } from '../lib/api';
 
@@ -89,7 +95,40 @@ export function TicketDetailPage() {
   const [messageError, setMessageError] = useState<string | null>(null);
   const messageKey = useRef(newIdempotencyKey());
 
+  const [kbKeyword, setKbKeyword] = useState('');
+  const [kbResults, setKbResults] = useState<KbArticleSummary[]>([]);
+  const [kbSearching, setKbSearching] = useState(false);
+  const [kbError, setKbError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<ReplyTemplateSummary[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+
   const canReadAudit = hasPermission('audit', 'read');
+  const canReadKb = hasPermission('kb', 'read');
+  const canUseTemplate = hasPermission('template', 'use');
+
+  useEffect(() => {
+    if (!canUseTemplate || effectiveProjectId === null) {
+      return;
+    }
+    let cancelled = false;
+    fetchReplyTemplates(effectiveProjectId)
+      .then((page) => {
+        if (!cancelled) {
+          setTemplates(page.items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTemplates([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseTemplate, effectiveProjectId]);
 
   const refresh = useCallback(
     async (syncDrafts: boolean): Promise<TicketDetailResponse | null> => {
@@ -258,6 +297,62 @@ export function TicketDetailPage() {
     }
   }
 
+  function appendToReply(text: string): void {
+    setMessageBody((previous) => (previous.trim() === '' ? text : `${previous}\n\n${text}`));
+  }
+
+  async function searchKnowledge(): Promise<void> {
+    if (effectiveProjectId === null || kbSearching) {
+      return;
+    }
+    setKbSearching(true);
+    setKbError(null);
+    try {
+      const page = await fetchKbArticles(effectiveProjectId, { q: kbKeyword.trim(), limit: 5 });
+      setKbResults(page.items);
+    } catch (caught: unknown) {
+      setKbResults([]);
+      setKbError(caught instanceof ApiError ? caught.message : '知识库检索失败');
+    } finally {
+      setKbSearching(false);
+    }
+  }
+
+  async function insertArticle(article: KbArticleSummary): Promise<void> {
+    if (effectiveProjectId === null) {
+      return;
+    }
+    try {
+      const detail = await fetchKbArticle(article.id, effectiveProjectId);
+      const latest = detail.versions.find((version) => version.id === detail.publishedVersionId);
+      if (latest !== undefined) {
+        appendToReply(`《${latest.title}》\n${latest.body}`);
+      }
+    } catch (caught: unknown) {
+      setKbError(caught instanceof ApiError ? caught.message : '文章加载失败');
+    }
+  }
+
+  async function applyTemplate(): Promise<void> {
+    if (effectiveProjectId === null || templateId === '' || templateBusy) {
+      return;
+    }
+    setTemplateBusy(true);
+    setTemplateError(null);
+    try {
+      const rendered = await renderReplyTemplate(templateId, effectiveProjectId, templateValues);
+      appendToReply(rendered.body);
+    } catch (caught: unknown) {
+      setTemplateError(
+        caught instanceof ApiError
+          ? `${caught.message}（${caught.code}）`
+          : '模板渲染失败，请稍后重试',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
+
   if (state.kind === 'loading') {
     return (
       <section className="panel">
@@ -316,6 +411,13 @@ export function TicketDetailPage() {
   ];
   const editable = canUpdate && ticket.status !== 'CLOSED';
   const closed = ticket.status === 'CLOSED';
+  const selectedTemplate = templates.find((template) => template.id === templateId) ?? null;
+  const missingTemplateVariables =
+    selectedTemplate === null
+      ? []
+      : selectedTemplate.variables.filter(
+          (name) => (templateValues[name] ?? '').trim() === '',
+        );
 
   return (
     <div className="workbench">
@@ -402,6 +504,127 @@ export function TicketDetailPage() {
           </div>
         ) : null}
       </section>
+
+      {canReadKb || canUseTemplate ? (
+        <aside className="panel" data-testid="kb-sidebar">
+          {canReadKb ? (
+            <>
+              <h2>知识库</h2>
+              <div className="inline-form">
+                <input
+                  className="input-field"
+                  placeholder="搜索已发布文章"
+                  value={kbKeyword}
+                  onChange={(event) => setKbKeyword(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      void searchKnowledge();
+                    }
+                  }}
+                  data-testid="kb-sidebar-search"
+                />
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  disabled={kbSearching}
+                  onClick={() => void searchKnowledge()}
+                  data-testid="kb-sidebar-search-button"
+                >
+                  搜索
+                </button>
+              </div>
+              {kbError !== null ? (
+                <p className="form-error" data-testid="kb-sidebar-error">
+                  {kbError}
+                </p>
+              ) : null}
+              {kbResults.length === 0 ? (
+                <p className="muted" data-testid="kb-sidebar-empty">
+                  暂无检索结果
+                </p>
+              ) : (
+                <ul className="menu" data-testid="kb-sidebar-results">
+                  {kbResults.map((article) => (
+                    <li key={article.id}>
+                      <button
+                        type="button"
+                        className="menu-item"
+                        onClick={() => void insertArticle(article)}
+                        data-testid="kb-sidebar-insert"
+                      >
+                        <strong>{article.title}</strong>
+                        {article.snippet !== null ? (
+                          <span className="muted">{article.snippet}</span>
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : null}
+
+          {canUseTemplate ? (
+            <>
+              <h2>回复模板</h2>
+              <select
+                className="select"
+                value={templateId}
+                onChange={(event) => {
+                  setTemplateId(event.target.value);
+                  setTemplateValues({});
+                  setTemplateError(null);
+                }}
+                data-testid="kb-template-select"
+              >
+                <option value="">选择模板</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+
+              {selectedTemplate !== null ? (
+                <div className="form">
+                  {selectedTemplate.variables.map((name) => (
+                    <label key={name} className="form-field">
+                      {name}
+                      <input
+                        className="input-field"
+                        value={templateValues[name] ?? ''}
+                        onChange={(event) =>
+                          setTemplateValues({ ...templateValues, [name]: event.target.value })
+                        }
+                        data-testid={`kb-template-var-${name}`}
+                      />
+                    </label>
+                  ))}
+                  {missingTemplateVariables.length > 0 ? (
+                    <p className="form-warning" data-testid="kb-template-missing">
+                      请填写变量：{missingTemplateVariables.join('、')}
+                    </p>
+                  ) : null}
+                  {templateError !== null ? (
+                    <p className="form-error" role="alert" data-testid="kb-template-error">
+                      {templateError}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={templateBusy || missingTemplateVariables.length > 0}
+                    onClick={() => void applyTemplate()}
+                    data-testid="kb-template-render"
+                  >
+                    插入到回复框
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </aside>
+      ) : null}
 
       {editable ? (
         <section className="panel">

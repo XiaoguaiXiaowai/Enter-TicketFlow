@@ -7,18 +7,28 @@ import cookieParser from 'cookie-parser';
 
 import { API_PREFIX } from '@ticket/shared';
 import { AppModule } from './app.module';
+import { accessLogMiddleware } from './common/access-log.middleware';
 import { JsonLogger } from './common/json-logger';
 import { writeLog } from './common/logger';
 import { requestContextMiddleware } from './common/request-context';
+import { securityHeadersMiddleware } from './common/security-headers';
 import { validationPipeOptions } from './common/validation';
 import { getEnv } from './config/runtime';
+import { createHttpMetricsMiddleware } from './observability/http-metrics.middleware';
+import { MetricsService } from './observability/metrics.service';
 
 async function bootstrap(): Promise<void> {
   const env = getEnv();
 
   const app = await NestFactory.create(AppModule, { logger: new JsonLogger() });
-  app.getHttpAdapter().getInstance().set('trust proxy', true);
+  // 只信任 nginx 这一跳，避免客户端自带的 X-Forwarded-For 伪造来源 IP 绕过限流。
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(requestContextMiddleware);
+  // 访问日志注册为中间件而不是拦截器：守卫拒绝（401/403/429）也要留下带 requestId 的记录。
+  app.use(accessLogMiddleware);
+  app.use(securityHeadersMiddleware);
+  // 指标中间件先于路由注册，守卫拒绝也能被统计。
+  app.use(createHttpMetricsMiddleware(app.get(MetricsService)));
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe(validationPipeOptions()));
   app.setGlobalPrefix(API_PREFIX);

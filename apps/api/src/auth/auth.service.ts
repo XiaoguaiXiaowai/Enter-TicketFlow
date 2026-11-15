@@ -6,6 +6,7 @@ import type { LoginResponse, TenantSummary, UserSummary } from '@ticket/shared';
 import { writeLog } from '../common/logger';
 import { AppException } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
+import { RateLimitService } from '../ratelimit/rate-limit.service';
 import type { Actor } from './auth.types';
 import type { LoginDto } from './auth.dto';
 import { PasswordService } from './password.service';
@@ -27,6 +28,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
+    private readonly rateLimit: RateLimitService,
   ) {}
 
   async login(dto: LoginDto, meta: RequestMeta): Promise<IssuedCredentials> {
@@ -52,6 +54,7 @@ export class AuthService {
       user === null ||
       !passwordOk
     ) {
+      await this.rateLimit.recordLoginFailure(dto.email);
       writeLog('info', 'login rejected', { tenantCode: dto.tenantCode });
       throw AppException.unauthorized('AUTH_INVALID_CREDENTIALS', '账号或密码错误');
     }
@@ -64,9 +67,11 @@ export class AuthService {
     );
 
     if (membership === null || membership.status !== 'ACTIVE') {
+      await this.rateLimit.recordLoginFailure(dto.email);
       throw AppException.unauthorized('AUTH_INVALID_CREDENTIALS', '账号或密码错误');
     }
 
+    await this.rateLimit.clearLoginFailures(dto.email);
     return this.issue(tenant, { id: user.id, email: user.email }, meta);
   }
 

@@ -65,6 +65,8 @@ model Project {
   membershipProjects  MembershipProject[]
   tickets             Ticket[]
   ticketCounters      TicketCounter[]
+  kbArticles          KbArticle[]
+  replyTemplates      ReplyTemplate[]
 
   @@unique([tenantId, code])
   @@map("projects")
@@ -353,4 +355,72 @@ model OutboxEvent {
 
   @@index([status, availableAt])
   @@map("outbox_events")
+}
+
+enum KbArticleVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("kb_article_version_status")
+}
+
+model KbArticle {
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  projectId          String    @map("project_id") @db.Uuid
+  slug               String
+  publishedVersionId String?   @map("published_version_id") @db.Uuid
+  version            Int       @default(1)
+  archivedAt         DateTime? @map("archived_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  project  Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  versions KbArticleVersion[]
+
+  @@unique([projectId, slug])
+  @@index([tenantId, projectId, updatedAt(sort: Desc), id(sort: Desc)])
+  @@index([tenantId, publishedVersionId])
+  @@map("kb_articles")
+}
+
+model KbArticleVersion {
+  id          String               @id @default(uuid()) @db.Uuid
+  tenantId    String               @map("tenant_id") @db.Uuid
+  articleId   String               @map("article_id") @db.Uuid
+  versionNo   Int                  @map("version_no")
+  title       String
+  body        String
+  status      KbArticleVersionStatus @default(DRAFT)
+  authorId    String               @map("author_id") @db.Uuid
+  publishedAt DateTime?            @map("published_at")
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  article KbArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, versionNo])
+  @@index([tenantId, articleId, versionNo(sort: Desc)])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "kb_article_versions_title_trgm_idx")
+  @@index([body(ops: raw("gin_trgm_ops"))], type: Gin, map: "kb_article_versions_body_trgm_idx")
+  @@map("kb_article_versions")
+}
+
+model ReplyTemplate {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  projectId  String    @map("project_id") @db.Uuid
+  name       String
+  body       String
+  variables  Json
+  version    Int       @default(1)
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, updatedAt(sort: Desc)])
+  @@map("reply_templates")
 }

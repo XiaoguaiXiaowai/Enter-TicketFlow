@@ -22,6 +22,7 @@ export interface HealthReadyResponse {
   migrationVersion: string;
   checks: {
     migrations: MigrationsSummary;
+    redis: 'up' | 'degraded';
   };
 }
 
@@ -115,7 +116,7 @@ export type TicketStatus = 'OPEN' | 'PENDING' | 'RESOLVED' | 'CLOSED';
 export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 export type TicketSource = 'WEB' | 'EMAIL' | 'PHONE' | 'API';
 export type MessageVisibility = 'PUBLIC' | 'INTERNAL';
-export type AuditAction = 'CREATE' | 'UPDATE';
+export type AuditAction = 'CREATE' | 'UPDATE' | 'PUBLISH' | 'ARCHIVE';
 
 export const TICKET_STATUSES: readonly TicketStatus[] = ['OPEN', 'PENDING', 'RESOLVED', 'CLOSED'];
 export const TICKET_PRIORITIES: readonly TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
@@ -225,11 +226,22 @@ export const PERMISSION = {
   TICKET_CLOSE: 'ticket:close',
   AUDIT_READ: 'audit:read',
   AUDIT_READ_ALL: 'audit:read_all',
+  KB_READ: 'kb:read',
+  KB_WRITE: 'kb:write',
+  KB_PUBLISH: 'kb:publish',
+  TEMPLATE_USE: 'template:use',
 } as const;
 
 export const RESOURCE = {
   TICKET: 'ticket',
   AUDIT: 'audit',
+  KB: 'kb',
+  TEMPLATE: 'template',
+} as const;
+
+/** 审计记录中的资源类型，与权限资源名解耦（权限用 `kb`，审计细化到表实体）。 */
+export const AUDIT_RESOURCE = {
+  KB_ARTICLE: 'kb_article',
 } as const;
 
 /** 字段级权限覆盖的字段，基字段（id、subject、version）始终返回。 */
@@ -239,3 +251,99 @@ export const TICKET_SENSITIVE_FIELDS = [
   'refundAmount',
   'assigneeId',
 ] as const;
+
+// ===== I3 知识库与回复模板 =====
+
+export type KbVersionStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+
+/** 检索结果只包含已发布版本的内容；status 为该版本的发布状态。 */
+export interface KbArticleSummary {
+  id: string;
+  slug: string;
+  title: string;
+  status: KbVersionStatus;
+  version: number;
+  versionNo: number;
+  publishedVersionId: string | null;
+  updatedAt: string;
+  snippet: string | null;
+}
+
+export interface KbArticleListResponse {
+  items: KbArticleSummary[];
+  nextCursor: string | null;
+}
+
+export interface KbArticleVersionResponse {
+  id: string;
+  versionNo: number;
+  title: string;
+  body: string;
+  status: KbVersionStatus;
+  authorId: string;
+  publishedAt: string | null;
+  createdAt: string;
+}
+
+export interface KbArticleResponse {
+  id: string;
+  slug: string;
+  version: number;
+  publishedVersionId: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  versions: KbArticleVersionResponse[];
+}
+
+export interface CreateKbArticleRequest {
+  slug: string;
+  title: string;
+  body: string;
+}
+
+export interface UpdateKbArticleRequest {
+  title: string;
+  body: string;
+}
+
+export interface PublishKbArticleRequest {
+  versionNo: number;
+  comment?: string;
+}
+
+export interface PublishKbArticleResponse {
+  id: string;
+  publishedVersionId: string;
+  version: number;
+  versionNo: number;
+}
+
+export interface ReplyTemplateSummary {
+  id: string;
+  name: string;
+  body: string;
+  variables: string[];
+  version: number;
+  updatedAt: string;
+}
+
+export interface ReplyTemplateListResponse {
+  items: ReplyTemplateSummary[];
+}
+
+export interface RenderReplyTemplateRequest {
+  variables: Record<string, string>;
+}
+
+export interface RenderReplyTemplateResponse {
+  templateId: string;
+  body: string;
+  missingVariables: string[];
+}
+
+export interface KbArticleListQuery {
+  q?: string;
+  limit?: number;
+  cursor?: string;
+}

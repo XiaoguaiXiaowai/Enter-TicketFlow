@@ -1,34 +1,34 @@
-import { Injectable, type OnModuleDestroy } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Injectable, Optional, type OnModuleDestroy } from '@nestjs/common';
 
-import { getEnv } from '../config/runtime';
 import { writeLog } from '../common/logger';
+import { getEnv } from '../config/runtime';
+import { MetricsService } from '../observability/metrics.service';
+import { TenantScopedClient } from './tenant-scoped-client';
+
+const SLOW_QUERY_MS = 500;
 
 /**
  * 连接按需建立：数据库不可用时进程仍能启动，
  * 由 /health/ready 返回 503，而不是让容器反复重启。
- *
- * 所有访问含 tenant_id 的业务表都必须走 withTenant：
- * 事务内设置 app.tenant_id，RLS 策略据此过滤，事务结束自动失效。
+ * 慢查询只记录 SQL 指纹（不含参数值），用于定位 N+1 与缺索引。
  */
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleDestroy {
-  constructor() {
-    super({ datasourceUrl: getEnv().DATABASE_URL });
-  }
-
-  async withTenant<T>(
-    tenantId: string,
-    fn: (tx: Prisma.TransactionClient) => Promise<T>,
-  ): Promise<T> {
-    return this.$transaction(
-      async (tx) => {
-        await tx.$queryRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-        return fn(tx);
-      },
-      // 工单号计数器与消息 seq 会串行化并发写入；预留足够等待时间，避免高并发批量建单时事务超时。
-      { maxWait: 10_000, timeout: 20_000 },
-    );
+export class PrismaService extends TenantScopedClient implements OnModuleDestroy {
+  constructor(@Optional() private readonly metrics?: MetricsService) {
+    super({ datasourceUrl: getEnv().DATABASE_URL, log: [{ emit: 'event', level: 'query' }] });
+    const client = this as unknown as {
+      $on: (event: 'query', callback: (event: { duration: number; query: string }) => void) => void;
+    };
+    client.$on('query', (event) => {
+      if (event.duration < SLOW_QUERY_MS) {
+        return;
+      }
+      this.metrics?.incCounter('db_slow_queries_total');
+      writeLog('warn', 'slow query', {
+        durationMs: event.duration,
+        query: event.query.replace(/\s+/g, ' ').slice(0, 200),
+      });
+    });
   }
 
   async onModuleDestroy(): Promise<void> {

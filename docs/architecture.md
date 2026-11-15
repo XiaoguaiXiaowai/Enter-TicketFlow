@@ -781,7 +781,9 @@ export const test = base.extend<{ tenant: TenantFixture }>({
 
 传输层强制 HTTPS，Nginx 配置 HSTS、`X-Content-Type-Options`、`Referrer-Policy` 与限制性的 CSP。前端不使用 `dangerouslySetInnerHTML` 渲染工单正文或知识库内容，富文本统一在后端清洗后以结构化节点返回；必须渲染 HTML 的场景走白名单标签过滤。
 
-限流按三档：登录接口按 IP 加账号双维度，5 次失败后锁定 10 分钟；写接口按用户每分钟 60 次；读接口按用户每分钟 300 次。计数在 Redis，超限返回 429 与 `Retry-After`。限流键包含租户，避免一个租户的突发流量挤占其他租户。
+限流按三档：登录接口按账号维度计数，同一账号连续 5 次失败后锁定 10 分钟（不按 IP 聚合，避免共享出口 IP 的整栋办公网因个别人输错密码被一起锁定，也不给"换 IP 继续试"留口子，账号维度更贴合凭据爆破的实际目标）；写接口按租户内用户每分钟 60 次；读接口按租户内用户每分钟 300 次，未认证请求按 IP 计数。计数在 Redis，超限返回 429 与 `Retry-After`，限流键为 `rl:write:<tenantId>:<userId>`、`rl:read:<tenantId>:<userId>`、`rl:login:account:<email>`，租户前缀确保一个租户的突发流量不挤占其他租户。
+
+Redis 不可用时降级为进程内固定窗口计数，请求继续放行但不放开：响应头带 `X-RateLimit-Degraded: in-process`，日志输出降级告警，指标 `rate_limit_fallback_total` 递增，`redis_state` 置 0 并由告警规则触发 `redis_degraded`；Redis 恢复后自动回到集中计数，无需重启。
 
 密码使用 Argon2id，参数在配置中声明并随硬件评估调整；登录失败提示统一为"账号或密码错误"，不区分账号是否存在。敏感配置只来自环境或密钥文件，仓库中不出现真实密钥，CI 用假值跑测试。
 
@@ -801,9 +803,11 @@ export const test = base.extend<{ tenant: TenantFixture }>({
 
 日志使用结构化 JSON，每条包含 `timestamp`、`level`、`requestId`、`tenantId`、`userId`、`route`、`statusCode`、`durationMs`。业务日志与访问日志分开输出，审计日志只写数据库，不依赖日志系统承担合规职责。
 
-指标按 RED 方式采集：请求速率、错误率、响应时长，按路由与租户维度打标签；另有数据库连接池占用、慢查询计数、Outbox 积压数、幂等键 `PENDING` 数四个业务指标。慢查询阈值 500ms，超过记录 SQL 指纹，不记录参数值。
+指标按 RED 方式采集，暴露在 `GET /api/metrics` 的 Prometheus 文本格式中：`http_requests_total{method,route,tenant,status}`、`http_status_class_total{method,route,tenant,status_class}`、`http_5xx_total`、`http_request_duration_ms{method,route,tenant,status}` 直方图（含 p50/p95/p99 分位线）。业务指标：`db_connections{state}` 与 `db_connections_max`（连接池占用与上限）、`idempotency_pending_keys{tenant}`（幂等键 `PENDING` 数）、`outbox_pending_events{tenant}`（Outbox 积压数）、`open_tickets{tenant}`、`redis_state`（1 正常 / 0 降级）、`rate_limit_fallback_total`、`rate_limit_rejected_total{scope}`、`auth_login_failures_total`、`health_ready_failures_total`、`alerts_total{alert}`。慢查询阈值 500ms，超过记录 SQL 指纹，不记录参数值。
 
-告警只针对可行动的信号：5xx 比例连续 5 分钟超过 1%、Outbox 积压超过 100 条、就绪检查连续失败、登录失败率异常升高。每条告警附排查入口（对应日志查询与仪表盘链接），不发无处置动作的通告。
+`/api/metrics` 在 Nginx 边缘返回 404，只允许集群内 Prometheus 通过容器网络直接抓取 API 端口，避免指标（含租户编码与内部路由）暴露在公网。
+
+告警只针对可行动的信号，阈值由配置键控制：5xx 比例在采样窗口内超过 `ALERT_5XX_RATIO_PERCENT`（默认 1%，样本量不足 20 时不判断）、Outbox 积压超过 `ALERT_OUTBOX_BACKLOG_THRESHOLD`（默认 100 条）、就绪检查出现失败、登录失败数超过 `ALERT_LOGIN_FAILURE_PER_MINUTE`（默认 20 次/分钟，按 `METRICS_INTERVAL_SECONDS` 折算窗口）、`redis_state` 为 0。命中后输出 `level=warn` 且 `type=alert` 的结构化日志，含 `alert` 名、实测值、阈值与 `runbook` 路径，同类告警 5 分钟冷却；生产环境由日志平台按 `type:"alert"` 路由到值班通道。不发无处置动作的通告。
 
 ### 10.4 数据保护
 

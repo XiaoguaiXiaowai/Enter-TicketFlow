@@ -18,6 +18,45 @@ export const envSchema = z.object({
   WORKER_DATABASE_URL: z.string().url(),
 
   REDIS_URL: z.string().url(),
+  REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(100).max(10000).default(1000),
+
+  // 限流：读/写按租户+用户维度分桶，登录失败按账号维度锁定。
+  RATE_LIMIT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  RATE_LIMIT_WRITE_PER_MINUTE: z.coerce.number().int().min(1).max(100000).default(60),
+  RATE_LIMIT_READ_PER_MINUTE: z.coerce.number().int().min(1).max(100000).default(300),
+  RATE_LIMIT_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(1000).default(5),
+  RATE_LIMIT_LOGIN_LOCK_SECONDS: z.coerce.number().int().min(60).max(86400).default(600),
+
+  // Outbox Worker：轮询间隔、批大小、租约、最大尝试次数与投递目标。
+  OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60000).default(1000),
+  OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(200).default(20),
+  OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
+  OUTBOX_LEASE_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
+  OUTBOX_WEBHOOK_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().url().optional(),
+  ),
+
+  // 指标与告警：5xx 占比按百分比配置，避免浮点环境变量。
+  METRICS_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(600).default(30),
+  ALERT_5XX_RATIO_PERCENT: z.coerce.number().int().min(0).max(100).default(1),
+  ALERT_OUTBOX_BACKLOG_THRESHOLD: z.coerce.number().int().min(1).max(1000000).default(100),
+  ALERT_LOGIN_FAILURE_PER_MINUTE: z.coerce.number().int().min(1).max(1000000).default(20),
+
+  // 备份与恢复演练：仅 tools profile 使用。
+  BACKUP_ENCRYPTION_PASSPHRASE: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(16).optional(),
+  ),
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(7),
+  BACKUP_DIR: z.string().min(1).default('/backups'),
+
+  // 性能验证脚本目标地址。
+  PERF_BASE_URL: z.string().url().default('http://localhost/api'),
+  PERF_ITERATIONS: z.coerce.number().int().min(5).max(5000).default(50),
 
   // 认证：HS256 对称密钥仅用于本地与预发；生产改由密钥文件注入。
   JWT_SECRET: z.string().min(32, 'JWT_SECRET 至少 32 个字符'),

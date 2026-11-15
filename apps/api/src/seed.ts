@@ -35,6 +35,9 @@ const ID = {
   membershipContractorA: 'f3333333-3333-4333-8333-333333333333',
   membershipAgentAInB: 'f4444444-4444-4444-8444-444444444444',
   membershipAgentB: 'f5555555-5555-4555-8555-555555555555',
+  templateRefundA1: '9a111111-1111-4111-8111-111111111111',
+  templateGreetingA2: '9a222222-2222-4222-8222-222222222222',
+  templateWelcomeB1: '9b111111-1111-4111-8111-111111111111',
 } as const;
 
 interface PermissionRow {
@@ -58,18 +61,24 @@ const AGENT_PERMISSIONS: PermissionRow[] = [
   { resource: 'ticket', action: 'reply' },
   { resource: 'ticket', action: 'note' },
   { resource: 'audit', action: 'read' },
+  { resource: 'kb', action: 'read' },
+  { resource: 'template', action: 'use' },
 ];
 
 const LEAD_PERMISSIONS: PermissionRow[] = [
   ...AGENT_PERMISSIONS,
   { resource: 'ticket', action: 'close' },
   { resource: 'audit', action: 'read_all' },
+  { resource: 'kb', action: 'write' },
+  { resource: 'kb', action: 'publish' },
 ];
 
 const CONTRACTOR_PERMISSIONS: PermissionRow[] = [
   { resource: 'ticket', action: 'list' },
   { resource: 'ticket', action: 'read' },
   { resource: 'ticket', action: 'reply' },
+  { resource: 'kb', action: 'read' },
+  { resource: 'template', action: 'use' },
 ];
 
 const AGENT_FIELDS: FieldPolicyRow[] = [
@@ -140,6 +149,22 @@ async function main(): Promise<void> {
           fields: CONTRACTOR_FIELDS,
         },
       ],
+      templates: [
+        {
+          id: ID.templateRefundA1,
+          projectId: ID.projectA1,
+          name: '退款指引',
+          body: '您好 {{customer_name}}，订单 {{order_no}} 的退款申请已受理，将在 3 个工作日内原路退回。',
+          variables: ['customer_name', 'order_no'],
+        },
+        {
+          id: ID.templateGreetingA2,
+          projectId: ID.projectA2,
+          name: '通用问候',
+          body: '您好 {{customer_name}}，已收到您的反馈，我们会尽快跟进处理。',
+          variables: ['customer_name'],
+        },
+      ],
       memberships: [
         {
           id: ID.membershipAgentA,
@@ -173,6 +198,15 @@ async function main(): Promise<void> {
           name: '外包坐席',
           permissions: CONTRACTOR_PERMISSIONS,
           fields: CONTRACTOR_FIELDS,
+        },
+      ],
+      templates: [
+        {
+          id: ID.templateWelcomeB1,
+          projectId: ID.projectB1,
+          name: '通用问候',
+          body: '您好 {{customer_name}}，这里是租户 B 客服，已收到您的反馈。',
+          variables: ['customer_name'],
         },
       ],
       memberships: [
@@ -216,6 +250,13 @@ interface TenantSeed {
     permissions: PermissionRow[];
     fields: FieldPolicyRow[];
   }[];
+  templates: {
+    id: string;
+    projectId: string;
+    name: string;
+    body: string;
+    variables: string[];
+  }[];
   memberships: {
     id: string;
     userId: string;
@@ -241,6 +282,21 @@ async function seedTenant(prisma: PrismaClient, seed: TenantSeed): Promise<void>
           tenantId: seed.tenantId,
           code: project.code,
           name: project.name,
+        },
+      });
+    }
+
+    for (const template of seed.templates) {
+      await tx.replyTemplate.upsert({
+        where: { projectId_name: { projectId: template.projectId, name: template.name } },
+        update: { body: template.body, variables: template.variables, archivedAt: null },
+        create: {
+          id: template.id,
+          tenantId: seed.tenantId,
+          projectId: template.projectId,
+          name: template.name,
+          body: template.body,
+          variables: template.variables,
         },
       });
     }

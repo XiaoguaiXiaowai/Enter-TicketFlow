@@ -4,7 +4,9 @@ import { resolve } from 'node:path';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { HealthLiveResponse, HealthReadyResponse, MigrationsSummary } from '@ticket/shared';
 
+import { MetricsService } from '../observability/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 interface MigrationRow {
   migration_name: string;
@@ -34,7 +36,11 @@ function expectedMigrations(): string[] {
 
 @Injectable()
 export class HealthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   live(): HealthLiveResponse {
     return { status: 'ok', uptimeSeconds: Math.round(process.uptime()) };
@@ -43,9 +49,13 @@ export class HealthService {
   async ready(): Promise<HealthReadyResponse> {
     const expected = expectedMigrations();
 
+    // 主动探活：Redis 故障只标记降级，不阻塞就绪判定。
+    await this.redis.execute((client) => client.ping());
+
     try {
       await this.prisma.$queryRaw`SELECT 1`;
     } catch {
+      this.metrics.incCounter('health_ready_failures_total', { reason: 'database' });
       throw new ServiceUnavailableException({
         code: 'NOT_READY',
         message: 'database is not ready',
@@ -76,6 +86,7 @@ export class HealthService {
     };
 
     if (migrations.pending.length > 0) {
+      this.metrics.incCounter('health_ready_failures_total', { reason: 'migrations' });
       throw new ServiceUnavailableException({
         code: 'NOT_READY',
         message: 'database migrations are not applied',
@@ -87,7 +98,8 @@ export class HealthService {
       status: 'ok',
       database: 'up',
       migrationVersion: applied[applied.length - 1] ?? 'none',
-      checks: { migrations },
+      // Redis 只用于限流等可降级能力：不可用时仍返回 200，但显式暴露状态。
+      checks: { migrations, redis: this.redis.componentState === 'connected' ? 'up' : 'degraded' },
     };
   }
 }

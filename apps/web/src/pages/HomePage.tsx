@@ -29,6 +29,7 @@ export function HomePage() {
   const canUpdateRefund = hasPermission('ticket', 'update') &&
     fieldRule('ticket', 'refundAmount')?.canWrite === true;
   const canReadAudit = hasPermission('audit', 'read');
+  const canReadKb = hasPermission('kb', 'read');
 
   return (
     <div className="workbench">
@@ -79,6 +80,15 @@ export function HomePage() {
               data-testid="menu-tickets"
             >
               工单工作台
+            </Link>
+          ) : null}
+          {canReadKb && projectId !== null ? (
+            <Link
+              className="menu-item"
+              to={`/knowledge?projectId=${projectId}`}
+              data-testid="menu-knowledge"
+            >
+              知识库检索
             </Link>
           ) : null}
           {canViewInternalNote ? (

@@ -56,6 +56,40 @@ services:
         condition: service_healthy
     restart: 'no'
 
+  backup:
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+    image: ticket-platform-backup
+    profiles: ['tools']
+    env_file:
+      - .env
+    volumes:
+      - ./docker/backup:/scripts:ro
+      - pgbackup:/backups
+    entrypoint: ['/bin/sh', '/scripts/backup.sh']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  restore-check:
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+    image: ticket-platform-backup
+    profiles: ['tools']
+    env_file:
+      - .env
+    volumes:
+      - ./docker/backup:/scripts:ro
+      - pgbackup:/backups
+    entrypoint: ['/bin/sh', '/scripts/restore-check.sh']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
   api:
     <<: *api-build
     env_file:
@@ -125,3 +159,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  pgbackup:

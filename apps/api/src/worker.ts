@@ -6,14 +6,15 @@ import { NestFactory } from '@nestjs/core';
 import { JsonLogger } from './common/json-logger';
 import { writeLog } from './common/logger';
 import { getEnv } from './config/runtime';
-import { PrismaModule } from './prisma/prisma.module';
+import { ObservabilityModule } from './observability/observability.module';
+import { OutboxWorkerModule } from './outbox/outbox-worker.module';
 
 /**
- * I0 的 worker 只是编排占位：保持常驻并响应退出信号。
- * Outbox 投递与清理任务在 I4 接入。
+ * Worker 负责 Outbox 投递与过期幂等键清理，使用独立的 app_worker 连接池。
+ * 进程常驻，收到 SIGTERM/SIGINT 后停止认领并在途任务结束后退出。
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [ObservabilityModule, OutboxWorkerModule],
 })
 class WorkerModule {}
 
@@ -25,12 +26,14 @@ async function bootstrap(): Promise<void> {
 
   writeLog('info', 'worker started', { nodeEnv: env.NODE_ENV });
 
-  setInterval(() => {
+  const heartbeat = setInterval(() => {
     writeLog('debug', 'worker heartbeat', { uptimeSeconds: Math.round(process.uptime()) });
   }, 60_000);
+  heartbeat.unref();
 
   const shutdown = (signal: string): void => {
     writeLog('info', 'worker stopping', { signal });
+    clearInterval(heartbeat);
     void app.close().finally(() => process.exit(0));
   };
 

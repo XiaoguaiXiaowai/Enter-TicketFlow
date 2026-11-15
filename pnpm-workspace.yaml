@@ -2,6 +2,13 @@ packages:
   - apps/*
   - packages/*
 
+# 传递依赖漏洞修复：security 审计（I4-T4）要求生产依赖无高危项。
+overrides:
+  js-yaml: ^4.3.2
+  lodash: ^4.17.24
+  '@nestjs/swagger>path-to-regexp': ^8.4.0
+  deepmerge-ts: ^8.0.0
+
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true

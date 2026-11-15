@@ -144,6 +144,20 @@ code {
   font-size: 13px;
 }
 
+.header-link {
+  padding: 4px 10px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  color: #1f2329;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.header-link:hover {
+  border-color: #3451b2;
+  color: #3451b2;
+}
+
 .workbench {
   display: grid;
   gap: 20px;
@@ -274,13 +288,24 @@ textarea.textarea,
   border-top: 1px solid #f2f3f5;
 }
 
+.menu {
+  list-style: none;
+}
+
 .menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   padding: 6px 12px;
   border: 1px solid #e5e6eb;
   border-radius: 8px;
+  background: #fff;
   color: #1f2329;
   font-size: 14px;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .menu-item:hover {
@@ -367,6 +392,15 @@ textarea.textarea,
 .form-actions {
   display: flex;
   gap: 10px;
+}
+
+.form-notice {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #e8f7ee;
+  color: #1a7f37;
+  font-size: 13px;
 }
 
 .form-warning {

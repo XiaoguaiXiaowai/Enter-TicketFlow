@@ -2,15 +2,23 @@ import type {
   ApiErrorBody,
   AppendMessageRequest,
   AppendMessageResponse,
+  CreateKbArticleRequest,
   CreateTicketRequest,
+  KbArticleListQuery,
+  KbArticleListResponse,
+  KbArticleResponse,
   LoginRequest,
   LoginResponse,
   MePermissionsResponse,
+  PublishKbArticleResponse,
+  RenderReplyTemplateResponse,
+  ReplyTemplateListResponse,
   TicketAuditResponse,
   TicketDetailResponse,
   TicketListQuery,
   TicketListResponse,
   TicketResponse,
+  UpdateKbArticleRequest,
   UpdateTicketRequest,
 } from '@ticket/shared';
 
@@ -221,6 +229,88 @@ export function fetchTicketAudit(
   return request<TicketAuditResponse>(`/tickets/${encodeURIComponent(ticketId)}/audit`, {
     projectId,
   });
+}
+
+export function fetchKbArticles(
+  projectId: string,
+  query: KbArticleListQuery = {},
+): Promise<KbArticleListResponse> {
+  const params = new URLSearchParams();
+  if (query.q !== undefined && query.q !== '') {
+    params.set('q', query.q);
+  }
+  if (query.limit !== undefined) {
+    params.set('limit', String(query.limit));
+  }
+  if (query.cursor !== undefined) {
+    params.set('cursor', query.cursor);
+  }
+  const qs = params.toString();
+  return request<KbArticleListResponse>(`/kb/articles${qs === '' ? '' : `?${qs}`}`, { projectId });
+}
+
+export function fetchKbArticle(articleId: string, projectId: string): Promise<KbArticleResponse> {
+  return request<KbArticleResponse>(`/kb/articles/${encodeURIComponent(articleId)}`, { projectId });
+}
+
+export function createKbArticle(
+  projectId: string,
+  payload: CreateKbArticleRequest,
+): Promise<KbArticleResponse> {
+  return request<KbArticleResponse>('/kb/articles', {
+    method: 'POST',
+    body: payload,
+    projectId,
+  });
+}
+
+export function updateKbArticle(
+  articleId: string,
+  projectId: string,
+  payload: UpdateKbArticleRequest,
+): Promise<KbArticleResponse> {
+  return request<KbArticleResponse>(`/kb/articles/${encodeURIComponent(articleId)}`, {
+    method: 'PATCH',
+    body: payload,
+    projectId,
+  });
+}
+
+export function publishKbArticle(
+  articleId: string,
+  projectId: string,
+  versionNo: number,
+): Promise<PublishKbArticleResponse> {
+  return request<PublishKbArticleResponse>(`/kb/articles/${encodeURIComponent(articleId)}/publish`, {
+    method: 'POST',
+    body: { versionNo },
+    projectId,
+  });
+}
+
+export function archiveKbArticle(
+  articleId: string,
+  projectId: string,
+): Promise<{ id: string; archivedAt: string }> {
+  return request<{ id: string; archivedAt: string }>(
+    `/kb/articles/${encodeURIComponent(articleId)}`,
+    { method: 'DELETE', projectId },
+  );
+}
+
+export function fetchReplyTemplates(projectId: string): Promise<ReplyTemplateListResponse> {
+  return request<ReplyTemplateListResponse>('/reply-templates', { projectId });
+}
+
+export function renderReplyTemplate(
+  templateId: string,
+  projectId: string,
+  variables: Record<string, string>,
+): Promise<RenderReplyTemplateResponse> {
+  return request<RenderReplyTemplateResponse>(
+    `/reply-templates/${encodeURIComponent(templateId)}/render`,
+    { method: 'POST', body: { variables }, projectId },
+  );
 }
 
 /** 浏览器环境优先使用 crypto.randomUUID，非安全上下文时退化为随机串。 */

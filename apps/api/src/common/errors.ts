@@ -35,4 +35,8 @@ export class AppException extends HttpException {
   static validation(message: string, details?: unknown): AppException {
     return new AppException(HttpStatus.BAD_REQUEST, 'VALIDATION_FAILED', message, details);
   }
+
+  static unprocessable(code: string, message: string, details?: unknown): AppException {
+    return new AppException(HttpStatus.UNPROCESSABLE_ENTITY, code, message, details);
+  }
 }
