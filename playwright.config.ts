@@ -18,7 +18,9 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // 本地未安装 Playwright 浏览器时可用 PLAYWRIGHT_CHANNEL=chrome 复用系统 Chrome
+        // 本地未安装 Playwright 浏览器时可用 PLAYWRIGHT_CHANNEL=chrome 复用系统 Chrome。
+        // 部分 macOS 环境下 headless chromium 不产生渲染帧（requestAnimationFrame 不触发），
+        // Playwright 的元素稳定性检查会一直等待，此时也需指定该变量。
         ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
       },
     },

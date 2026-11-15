@@ -18,6 +18,19 @@ export const envSchema = z.object({
   WORKER_DATABASE_URL: z.string().url(),
 
   REDIS_URL: z.string().url(),
+
+  // 认证：HS256 对称密钥仅用于本地与预发；生产改由密钥文件注入。
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET 至少 32 个字符'),
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+  REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).max(2592000).default(604800),
+
+  // Argon2id 参数，随硬件评估调整。
+  ARGON2_MEMORY_KIB: z.coerce.number().int().min(8192).max(1048576).default(19456),
+  ARGON2_TIME_COST: z.coerce.number().int().min(2).max(10).default(2),
+  ARGON2_PARALLELISM: z.coerce.number().int().min(1).max(8).default(1),
+
+  // seed 只用于演示租户，生产环境不执行。
+  SEED_DEFAULT_PASSWORD: z.string().min(8),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

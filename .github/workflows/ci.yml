@@ -25,6 +25,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm check:env
+      - run: pnpm --filter @ticket/api check:permissions
       - run: pnpm build
 
   integration:
@@ -51,6 +52,8 @@ jobs:
       DATABASE_URL: postgresql://app_rw:ci_rw@localhost:5432/ticket_ci?schema=public
       MIGRATE_DATABASE_URL: postgresql://app_migrator:ci_migrator@localhost:5432/ticket_ci?schema=public
       WORKER_DATABASE_URL: postgresql://app_worker:ci_worker@localhost:5432/ticket_ci?schema=public
+      JWT_SECRET: ci_jwt_secret_0123456789abcdef0123456789abcdef
+      SEED_DEFAULT_PASSWORD: ci_seed_password
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -73,7 +76,11 @@ jobs:
             --to-schema-datamodel prisma/schema.prisma \
             --shadow-database-url postgresql://postgres:postgres@localhost:5432/ticket_shadow \
             --exit-code
+      - name: 写入演示租户数据
+        run: pnpm --filter @ticket/api db:seed
       - run: pnpm test:integration
+      - name: 校验 RLS 覆盖
+        run: pnpm --filter @ticket/api check:rls
 
   e2e:
     needs: integration
@@ -94,6 +101,7 @@ jobs:
           cp .env.example .env
           docker compose --profile tools build
           docker compose --profile tools run --rm migrate
+          docker compose --profile tools run --rm seed
           docker compose up -d
       - name: 等待就绪检查通过
         run: |

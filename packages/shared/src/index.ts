@@ -45,3 +45,197 @@ export interface HealthErrorBody extends ApiErrorBody {
     };
   };
 }
+
+// ===== I1 认证、租户与权限 =====
+
+export interface UserSummary {
+  id: string;
+  email: string;
+}
+
+export interface TenantSummary {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ProjectSummary {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface RoleSummary {
+  code: string;
+  name: string;
+}
+
+export interface PermissionSummary {
+  resource: string;
+  action: string;
+}
+
+export interface FieldPolicySummary {
+  resource: string;
+  field: string;
+  canRead: boolean;
+  canWrite: boolean;
+  masked: boolean;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  tenantCode: string;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  expiresInSeconds: number;
+  user: UserSummary;
+  tenant: TenantSummary;
+}
+
+export interface MePermissionsResponse {
+  user: UserSummary;
+  tenant: TenantSummary;
+  membership: {
+    id: string;
+    status: string;
+  };
+  roles: RoleSummary[];
+  permissions: PermissionSummary[];
+  fields: FieldPolicySummary[];
+  projects: ProjectSummary[];
+}
+
+// ===== I2 工单核心与审计 =====
+
+export type TicketStatus = 'OPEN' | 'PENDING' | 'RESOLVED' | 'CLOSED';
+export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+export type TicketSource = 'WEB' | 'EMAIL' | 'PHONE' | 'API';
+export type MessageVisibility = 'PUBLIC' | 'INTERNAL';
+export type AuditAction = 'CREATE' | 'UPDATE';
+
+export const TICKET_STATUSES: readonly TicketStatus[] = ['OPEN', 'PENDING', 'RESOLVED', 'CLOSED'];
+export const TICKET_PRIORITIES: readonly TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
+export const TICKET_SOURCES: readonly TicketSource[] = ['WEB', 'EMAIL', 'PHONE', 'API'];
+
+/** 基字段始终返回，敏感字段按调用者的字段策略投影。 */
+export interface TicketResponse {
+  id: string;
+  ticketNo: string;
+  subject: string;
+  description: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  source: TicketSource;
+  customerName: string;
+  tags: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  customerPhone?: string;
+  internalNote?: string;
+  refundAmount?: number;
+  assigneeId?: string;
+}
+
+export interface TicketMessageResponse {
+  id: string;
+  seq: number;
+  visibility: MessageVisibility;
+  body: string;
+  authorId: string;
+  createdAt: string;
+}
+
+export interface TicketDetailResponse extends TicketResponse {
+  messages: TicketMessageResponse[];
+}
+
+export interface TicketListResponse {
+  items: TicketResponse[];
+  nextCursor: string | null;
+}
+
+export interface CreateTicketRequest {
+  subject: string;
+  description: string;
+  priority?: TicketPriority;
+  customerName: string;
+  customerPhone?: string;
+  assigneeId?: string;
+  tags?: string[];
+  source?: TicketSource;
+}
+
+export interface UpdateTicketRequest {
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  assigneeId?: string | null;
+  tags?: string[];
+  internalNote?: string | null;
+  refundAmount?: number | null;
+  customerPhone?: string;
+}
+
+export interface AppendMessageRequest {
+  body: string;
+  visibility: MessageVisibility;
+}
+
+export interface AppendMessageResponse {
+  id: string;
+  seq: number;
+  visibility: MessageVisibility;
+  createdAt: string;
+}
+
+export interface TicketAuditEntry {
+  id: string;
+  action: AuditAction;
+  actorId: string;
+  requestId: string;
+  ip: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  changedFields: string[];
+  createdAt: string;
+}
+
+export interface TicketAuditResponse {
+  items: TicketAuditEntry[];
+}
+
+export interface TicketListQuery {
+  status?: TicketStatus;
+  assigneeId?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export const PERMISSION = {
+  TICKET_LIST: 'ticket:list',
+  TICKET_READ: 'ticket:read',
+  TICKET_CREATE: 'ticket:create',
+  TICKET_UPDATE: 'ticket:update',
+  TICKET_REPLY: 'ticket:reply',
+  TICKET_NOTE: 'ticket:note',
+  TICKET_CLOSE: 'ticket:close',
+  AUDIT_READ: 'audit:read',
+  AUDIT_READ_ALL: 'audit:read_all',
+} as const;
+
+export const RESOURCE = {
+  TICKET: 'ticket',
+  AUDIT: 'audit',
+} as const;
+
+/** 字段级权限覆盖的字段，基字段（id、subject、version）始终返回。 */
+export const TICKET_SENSITIVE_FIELDS = [
+  'customerPhone',
+  'internalNote',
+  'refundAmount',
+  'assigneeId',
+] as const;

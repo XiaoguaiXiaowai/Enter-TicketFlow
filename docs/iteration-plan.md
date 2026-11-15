@@ -207,10 +207,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：`users`、`sessions` 表；Argon2id 密码哈希；会话包含 `token_version`、refresh 摘要、设备信息、撤销时间。
 - 依赖：I0 出口。
 - 验证清单：
-  - [ ] 数据库中不出现明文或可逆密码，哈希前缀为 Argon2id。
-  - [ ] 同一密码两次注册产生不同哈希。
-  - [ ] 撤销会话后 `token_version` 递增，旧 access token 立即失效。
-  - [ ] 会话到期后刷新接口返回 401。
+  - [x] 数据库中不出现明文或可逆密码，哈希前缀为 Argon2id。
+  - [x] 同一密码两次注册产生不同哈希。
+  - [x] 撤销会话后 `token_version` 递增，旧 access token 立即失效。
+  - [x] 会话到期后刷新接口返回 401。
 - 验收标准：四项均可在集成测试中复现；撤销后 1 秒内旧 token 无法访问任何受保护接口。
 
 #### I1-T2 认证接口与刷新轮换
@@ -218,10 +218,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：`POST /v1/auth/login`、`POST /v1/auth/refresh`、`POST /v1/auth/logout`；access token 15 分钟，refresh 轮换，Cookie 属性按架构文档设置。
 - 依赖：I1-T1。
 - 验证清单：
-  - [ ] 正确凭据返回 200，响应体不含 refresh token 明文。
-  - [ ] 错误密码返回 401，提示不区分账号不存在与密码错误。
-  - [ ] 连续刷新两次，第一次的 refresh token 第二次使用时返回 401。
-  - [ ] 登出后使用原 access token 访问受保护接口返回 401。
+  - [x] 正确凭据返回 200，响应体不含 refresh token 明文。
+  - [x] 错误密码返回 401，提示不区分账号不存在与密码错误。
+  - [x] 连续刷新两次，第一次的 refresh token 第二次使用时返回 401。
+  - [x] 登出后使用原 access token 访问受保护接口返回 401。
 - 验收标准：登录、刷新、登出、过期四条路径的返回码与 Cookie 属性全部符合约定；响应头包含 `Cache-Control: no-store`。
 
 #### I1-T3 租户、项目、成员与角色模型
@@ -229,10 +229,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：`tenants`、`projects`、`memberships`、`membership_projects`、`roles`、`membership_roles`、`role_permissions` 表与 seed；系统角色为客服、客服主管、外包坐席。
 - 依赖：I0-T3。
 - 验证清单：
-  - [ ] 同一用户可加入两个租户，`(tenant_id, user_id)` 唯一约束生效。
-  - [ ] 成员只被授予项目 A 时，项目 B 的请求返回 403。
-  - [ ] `X-Project-Id` 缺失时，依赖项目的接口返回 400。
-  - [ ] 种子脚本重复执行不产生重复角色或重复授权。
+  - [x] 同一用户可加入两个租户，`(tenant_id, user_id)` 唯一约束生效。
+  - [x] 成员只被授予项目 A 时，项目 B 的请求返回 403。
+  - [x] `X-Project-Id` 缺失时，依赖项目的接口返回 400。
+  - [x] 种子脚本重复执行不产生重复角色或重复授权。
 - 验收标准：跨租户、跨项目、缺项目头三种场景行为符合上述返回码；seed 连续执行三次数据量不变。
 
 #### I1-T4 权限求值与全局 Guard
@@ -240,10 +240,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：`can(actor, action, resource, field?)`、`@RequirePermission` 元数据、`PolicyGuard`、默认拒绝、权限缓存与变更后主动失效。
 - 依赖：I1-T3。
 - 验证清单：
-  - [ ] 所有业务写接口声明 `@RequirePermission`，未声明的写接口由 CI 检查失败。
-  - [ ] 角色缺少 `ticket:create` 时调用创建接口返回 403。
-  - [ ] 移除角色授权后，不等待缓存过期，下一次请求即返回 403。
-  - [ ] 权限服务异常时请求被拒绝而不是放行。
+  - [x] 所有业务写接口声明 `@RequirePermission`，未声明的写接口由 CI 检查失败。
+  - [x] 角色缺少 `ticket:create` 时调用创建接口返回 403。
+  - [x] 移除角色授权后，不等待缓存过期，下一次请求即返回 403。
+  - [x] 权限服务异常时请求被拒绝而不是放行。
 - 验收标准：四条路径均可复现；任何权限判断失败都表现为拒绝，不存在"异常即通过"的分支。
 
 #### I1-T5 字段级权限、投影与写入白名单
@@ -251,10 +251,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：`field_policies` 表、读取投影、写入白名单、手机号与金额脱敏器、`GET /v1/me/permissions`。
 - 依赖：I1-T4。
 - 验证清单：
-  - [ ] 外包坐席读取资源时响应体不含 `internalNote`、`refundAmount` 字段，而不是返回 `null`。
-  - [ ] 客服写入 `refundAmount` 返回 403 `FIELD_DENIED`，数据未变化。
-  - [ ] 请求体携带未声明字段返回 400，并在 `details` 中指出字段名。
-  - [ ] 手机号按角色返回完整值或后四位，格式统一。
+  - [x] 外包坐席读取资源时响应体不含 `internalNote`、`refundAmount` 字段，而不是返回 `null`。
+  - [x] 客服写入 `refundAmount` 返回 403 `FIELD_DENIED`，数据未变化。
+  - [x] 请求体携带未声明字段返回 400，并在 `details` 中指出字段名。
+  - [x] 手机号按角色返回完整值或后四位，格式统一。
 - 验收标准：字段的三种状态（完整、脱敏、缺失）与策略表逐条对应；响应断言使用字段存在性而非空值。
 
 #### I1-T6 RLS 策略与数据库角色隔离
@@ -262,10 +262,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：对所有含 `tenant_id` 的表启用 RLS 与 `FORCE ROW LEVEL SECURITY`；`app_rw` 无 `BYPASSRLS`；事务内设置 `app.tenant_id`；worker 角色按批次设置上下文。
 - 依赖：I1-T3。
 - 验证清单：
-  - [ ] 用 `app_rw` 连接并设置租户 A，查询结果只含 A 的数据。
-  - [ ] 未设置 `app.tenant_id` 时查询返回空集而不是报错或全量数据。
-  - [ ] 用 `app_rw` 执行 `ALTER TABLE` 被拒绝。
-  - [ ] 尝试插入 `tenant_id` 为 B 的数据（当前上下文为 A）被策略拒绝。
+  - [x] 用 `app_rw` 连接并设置租户 A，查询结果只含 A 的数据。
+  - [x] 未设置 `app.tenant_id` 时查询返回空集而不是报错或全量数据。
+  - [x] 用 `app_rw` 执行 `ALTER TABLE` 被拒绝。
+  - [x] 尝试插入 `tenant_id` 为 B 的数据（当前上下文为 A）被策略拒绝。
 - 验收标准：四个场景在集成测试中通过；策略覆盖所有业务表，新增表遗漏 RLS 时 CI 检查失败。
 
 #### I1-T7 前端登录、租户切换与越权用例
@@ -273,10 +273,10 @@ curl -s -b /tmp/a.cookie http://localhost/api/v1/me/permissions
 - 内容：登录页、租户选择、会话恢复、权限驱动的菜单与按钮、401 自动刷新、403 提示；Playwright `@permissions` 套件。
 - 依赖：I1-T2、I1-T5。
 - 验证清单：
-  - [ ] 刷新页面后登录态保持，access token 不出现在 localStorage。
-  - [ ] 切换租户后菜单与字段展示随之变化。
-  - [ ] 隐藏"内部备注"入口后，直接调用接口仍返回 403，用例有断言。
-  - [ ] 跨租户访问工单详情（用占位资源）返回 404 页面而非数据泄露。
+  - [x] 刷新页面后登录态保持，access token 不出现在 localStorage。
+  - [x] 切换租户后菜单与字段展示随之变化。
+  - [x] 隐藏"内部备注"入口后，直接调用接口仍返回 403，用例有断言。
+  - [x] 跨租户访问工单详情（用占位资源）返回 404 页面而非数据泄露。
 - 验收标准：`pnpm exec playwright test -g @permissions` 全部通过；用例同时执行 UI 操作与接口直调，证明隐藏不等于授权。
 
 ### 4.5 验收登记
@@ -337,10 +337,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：`tickets`、`ticket_messages` 表，工单号 `{项目编码}-{序号}` 的序列，`(tenant_id, project_id, ticket_no)` 唯一索引，列表与消息查询索引。
 - 依赖：I1 出口。
 - 验证清单：
-  - [ ] 并发生成 100 张工单，工单号无重复且连续可读。
-  - [ ] 同一租户不同项目可使用相同序号，不触发唯一冲突。
-  - [ ] 删除工单时消息按外键策略处理，不留下孤立消息。
-  - [ ] 列表查询命中 `(tenant_id, project_id, status, updated_at)` 索引。
+  - [x] 并发生成 100 张工单，工单号无重复且连续可读。
+  - [x] 同一租户不同项目可使用相同序号，不触发唯一冲突。
+  - [x] 删除工单时消息按外键策略处理，不留下孤立消息。
+  - [x] 列表查询命中 `(tenant_id, project_id, status, updated_at)` 索引。
 - 验收标准：并发测试通过；`EXPLAIN` 显示列表查询走索引而非顺序扫描；跨项目工单号互不影响。
 
 #### I2-T2 创建工单事务与幂等
@@ -348,10 +348,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：`POST /v1/tickets`，同一事务内写工单、审计、幂等记录与 Outbox 事件；幂等键占位、请求体哈希、响应快照、24 小时过期。
 - 依赖：I2-T1、I1-T5。
 - 验证清单：
-  - [ ] 同键同请求体两次调用返回相同 `id`，第二次状态码 200 且 `Idempotent-Replay: true`。
-  - [ ] 同键不同请求体返回 409 `IDEMPOTENCY_KEY_REUSED`。
-  - [ ] 两个并发请求使用同一键，最终只有一张工单，另一个得到回放结果。
-  - [ ] 制造审计写入失败，工单与幂等记录一并回滚。
+  - [x] 同键同请求体两次调用返回相同 `id`，第二次状态码 200 且 `Idempotent-Replay: true`。
+  - [x] 同键不同请求体返回 409 `IDEMPOTENCY_KEY_REUSED`。
+  - [x] 两个并发请求使用同一键，最终只有一张工单，另一个得到回放结果。
+  - [x] 制造审计写入失败，工单与幂等记录一并回滚。
 - 验收标准：四种场景均可复现；工单数、幂等记录数、审计记录数在任何失败组合下保持一致。
 
 #### I2-T3 工单列表与详情
@@ -359,10 +359,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：`GET /v1/tickets` 游标分页与筛选，`GET /v1/tickets/{id}` 详情聚合，字段按调用者策略投影。
 - 依赖：I2-T1。
 - 验证清单：
-  - [ ] 默认返回 20 条，`nextCursor` 可继续翻页且无重复、无遗漏。
-  - [ ] 状态与负责人筛选可组合，结果与直接查询数据库一致。
-  - [ ] 详情中的消息默认返回前 50 条，响应时间在预算内。
-  - [ ] 外包角色响应不含 `internalNote` 与 `refundAmount`。
+  - [x] 默认返回 20 条，`nextCursor` 可继续翻页且无重复、无遗漏。
+  - [x] 状态与负责人筛选可组合，结果与直接查询数据库一致。
+  - [x] 详情中的消息默认返回前 50 条，响应时间在预算内。
+  - [x] 外包角色响应不含 `internalNote` 与 `refundAmount`。
 - 验收标准：翻页遍历全量后去重条数等于总数；每条查询的租户与项目条件在 SQL 日志中可见；字段投影断言按存在性检查。
 
 #### I2-T4 状态机与乐观锁更新
@@ -370,10 +370,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：`TicketStateMachine`、`PATCH /v1/tickets/{id}`、`If-Match` 版本校验、`409 VERSION_CONFLICT` 与 `400 INVALID_TRANSITION`。
 - 依赖：I2-T2。
 - 验证清单：
-  - [ ] 合法迁移按状态图执行，非法迁移返回 400 且数据未变。
-  - [ ] 不带 `If-Match` 返回 412；版本不匹配返回 409 并附当前版本。
-  - [ ] 两个请求同时更新同一版本，恰好一个成功、一个失败。
-  - [ ] 无字段写权限的角色尝试修改对应字段返回 403。
+  - [x] 合法迁移按状态图执行，非法迁移返回 400 且数据未变。
+  - [x] 不带 `If-Match` 返回 412；版本不匹配返回 409 并附当前版本。
+  - [x] 两个请求同时更新同一版本，恰好一个成功、一个失败。
+  - [x] 无字段写权限的角色尝试修改对应字段返回 403。
 - 验收标准：状态图每条边都有通过与拒绝两类用例；并发用例重复执行 10 次结果稳定为一次成功、一次失败。
 
 #### I2-T5 消息追加
@@ -381,10 +381,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：`POST /v1/tickets/{id}/messages`，公开回复与内部备注两种可见性，`seq` 按工单递增，幂等键保护，已关闭工单拒绝追加。
 - 依赖：I2-T2。
 - 验证清单：
-  - [ ] 公开回复需要 `ticket:reply`，内部备注需要 `ticket:note`，缺权限返回 403。
-  - [ ] 同键重复提交只产生一条消息。
-  - [ ] 并发追加 20 条消息，`seq` 连续无空洞无重复。
-  - [ ] 已关闭工单追加返回 409 `TICKET_CLOSED`。
+  - [x] 公开回复需要 `ticket:reply`，内部备注需要 `ticket:note`，缺权限返回 403。
+  - [x] 同键重复提交只产生一条消息。
+  - [x] 并发追加 20 条消息，`seq` 连续无空洞无重复。
+  - [x] 已关闭工单追加返回 409 `TICKET_CLOSED`。
 - 验收标准：20 并发测试通过；内部备注对无权限角色不可见，对主管可见；消息内容不通过前端 HTML 直接渲染。
 
 #### I2-T6 审计写入与查询
@@ -392,10 +392,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：`audit_logs` 表、创建与更新时字段级 diff、`GET /v1/tickets/{id}/audit`、审计查询的角色范围限制。
 - 依赖：I2-T2、I2-T4。
 - 验证清单：
-  - [ ] 创建工单产生一条 `CREATE` 审计，更新产生 `UPDATE` 并只记录变更字段。
-  - [ ] 审计记录包含 `actorId`、`requestId`、`ip`、`before`、`after`。
-  - [ ] 普通客服只能看到自己经手工单的审计，主管可看项目内全部。
-  - [ ] 应用角色执行 `UPDATE audit_logs` 被数据库拒绝。
+  - [x] 创建工单产生一条 `CREATE` 审计，更新产生 `UPDATE` 并只记录变更字段。
+  - [x] 审计记录包含 `actorId`、`requestId`、`ip`、`before`、`after`。
+  - [x] 普通客服只能看到自己经手工单的审计，主管可看项目内全部。
+  - [x] 应用角色执行 `UPDATE audit_logs` 被数据库拒绝。
 - 验收标准：一次更新只产生一条审计；未变化字段不出现在 `changedFields`；越权查询返回 403 或空结果，不泄露记录存在性。
 
 #### I2-T7 工单工作台前端
@@ -403,10 +403,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：列表（筛选、分页、状态标签）、详情（消息时间线、字段编辑、内部备注）、建单表单、409 冲突提示与刷新后重试、提交按钮防重复点击。
 - 依赖：I2-T3、I2-T4、I2-T5。
 - 验证清单：
-  - [ ] 建单成功后跳转详情，工单号与列表一致。
-  - [ ] 双击提交只产生一次请求，列表只多一条。
-  - [ ] 收到 409 时提示"已被他人更新"，保留已输入内容并可刷新。
-  - [ ] 无权限字段在表单中不可编辑，直接构造请求仍被服务端拒绝。
+  - [x] 建单成功后跳转详情，工单号与列表一致。
+  - [x] 双击提交只产生一次请求，列表只多一条。
+  - [x] 收到 409 时提示"已被他人更新"，保留已输入内容并可刷新。
+  - [x] 无权限字段在表单中不可编辑，直接构造请求仍被服务端拒绝。
 - 验收标准：上述四条在浏览器中可复现；冲突提示不丢失用户输入；前端不承担权限判断的最终责任。
 
 #### I2-T8 工单集成测试与端到端套件
@@ -414,10 +414,10 @@ curl -i -X PATCH http://localhost/api/v1/tickets/<ticket-id> \
 - 内容：仓储层集成测试（幂等约束、乐观锁、租户过滤、审计一致性）与 Playwright `@idempotency`、`@concurrency`、`@audit` 用例。
 - 依赖：I2-T2 至 I2-T7。
 - 验证清单：
-  - [ ] 集成测试覆盖重复提交、并发建单、并发更新、审计回滚四个场景。
-  - [ ] E2E 用同一请求重放两次，断言列表只多一条。
-  - [ ] E2E 用两个浏览器上下文同时编辑，断言一个成功、一个收到冲突提示。
-  - [ ] CI 中全部通过，失败时保留 trace。
+  - [x] 集成测试覆盖重复提交、并发建单、并发更新、审计回滚四个场景。
+  - [x] E2E 用同一请求重放两次，断言列表只多一条。
+  - [x] E2E 用两个浏览器上下文同时编辑，断言一个成功、一个收到冲突提示。
+  - [x] CI 中全部通过，失败时保留 trace。
 - 验收标准：新增用例在 CI 中稳定通过三次连续运行；并发用例无偶发失败；失败产物可定位到具体请求与响应。
 
 ### 5.5 验收登记

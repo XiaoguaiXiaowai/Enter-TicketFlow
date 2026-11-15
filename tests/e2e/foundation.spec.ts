@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('@foundation I0 工程基座', () => {
-  test('健康检查与首页可访问且无控制台错误', async ({ page, request }) => {
+  test('健康检查可用，未登录访问首页进入登录页且无前端异常', async ({ page, request }) => {
     const live = await request.get('/api/health/live');
     expect(live.status()).toBe(200);
 
@@ -21,32 +21,30 @@ test.describe('@foundation I0 工程基座', () => {
     expect(body.checks.migrations.pending).toEqual([]);
 
     const consoleErrors: string[] = [];
-    const failedResponses: string[] = [];
+    const serverErrors: string[] = [];
     page.on('console', (message) => {
-      if (message.type() === 'error') {
+      if (message.type() === 'error' && !message.text().includes('Failed to load resource')) {
         consoleErrors.push(message.text());
       }
     });
     page.on('response', (response) => {
-      if (response.status() >= 400) {
-        failedResponses.push(`${response.status()} ${response.url()}`);
+      if (response.status() >= 500) {
+        serverErrors.push(`${response.status()} ${response.url()}`);
       }
     });
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: '工程基座已就绪' })).toBeVisible();
-    await expect(page.getByTestId('health-state')).toHaveText('就绪');
-    await expect(page.getByTestId('migration-version')).not.toHaveText('-');
+    await expect(page.getByRole('heading', { name: '登录' })).toBeVisible();
+    await expect(page.getByTestId('login-form')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
-    expect(failedResponses).toEqual([]);
+    expect(serverErrors).toEqual([]);
   });
 
-  test('前端深层路由直接访问回退到 index.html', async ({ page }) => {
+  test('前端深层路由直接访问回退到 index.html 并进入登录页', async ({ page }) => {
     const response = await page.goto('/tickets/123');
     expect(response?.status()).toBe(200);
-    await expect(page.getByRole('heading', { name: '工单详情' })).toBeVisible();
-    await expect(page.getByTestId('ticket-id')).toHaveText('123');
+    await expect(page.getByRole('heading', { name: '登录' })).toBeVisible();
   });
 
   test('静态资源长缓存，index.html 不缓存', async ({ page, request }) => {

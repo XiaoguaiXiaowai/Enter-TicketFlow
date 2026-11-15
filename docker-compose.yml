@@ -45,6 +45,17 @@ services:
         condition: service_healthy
     restart: 'no'
 
+  seed:
+    <<: *api-build
+    profiles: ['tools']
+    command: ['node', 'dist/seed.js']
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
   api:
     <<: *api-build
     env_file:

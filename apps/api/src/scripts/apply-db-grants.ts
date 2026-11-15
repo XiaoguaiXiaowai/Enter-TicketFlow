@@ -53,6 +53,9 @@ export async function applyDbGrants(): Promise<void> {
        GRANT USAGE, SELECT ON SEQUENCES TO ${roleList}`,
     );
 
+    // 审计只追加：运行时角色只能 SELECT / INSERT，直接 UPDATE / DELETE 会被数据库拒绝。
+    await client.query(`REVOKE UPDATE, DELETE ON "audit_logs" FROM ${roleList}`);
+
     writeLog('info', 'database grants applied', { roles: runtimeRoles });
   } finally {
     await client.end();

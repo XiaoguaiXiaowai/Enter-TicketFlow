@@ -1,71 +1,137 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { ApiError, fetchHealthReady } from '../lib/api';
+import { useAuth } from '../auth/AuthContext';
 
-type HealthState =
-  | { kind: 'loading' }
-  | { kind: 'ready'; migrationVersion: string }
-  | { kind: 'unavailable'; reason: string };
+// 与 @ticket/shared 的 TICKET_SENSITIVE_FIELDS 保持一致；前端只做展示，判定始终在服务端。
+const TICKET_SENSITIVE_FIELDS = [
+  'customerPhone',
+  'internalNote',
+  'refundAmount',
+  'assigneeId',
+] as const;
+
+const FIELD_LABELS: Record<string, string> = {
+  customerPhone: '客户手机号',
+  internalNote: '内部备注',
+  refundAmount: '退款金额',
+  assigneeId: '处理人',
+};
 
 export function HomePage() {
-  const [health, setHealth] = useState<HealthState>({ kind: 'loading' });
+  const { session, projectId, setProjectId, hasPermission, fieldRule } = useAuth();
 
-  useEffect(() => {
-    let cancelled = false;
+  if (session === null) {
+    return null;
+  }
 
-    fetchHealthReady()
-      .then((response) => {
-        if (!cancelled) {
-          setHealth({ kind: 'ready', migrationVersion: response.migrationVersion });
-        }
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-        const reason =
-          error instanceof ApiError
-            ? `${error.code}（requestId: ${error.requestId ?? '-'}）`
-            : '网络异常';
-        setHealth({ kind: 'unavailable', reason });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const canListTickets = hasPermission('ticket', 'list');
+  const canViewInternalNote = hasPermission('ticket', 'note');
+  const canUpdateRefund = hasPermission('ticket', 'update') &&
+    fieldRule('ticket', 'refundAmount')?.canWrite === true;
+  const canReadAudit = hasPermission('audit', 'read');
 
   return (
-    <section className="panel">
-      <h1>工程基座已就绪</h1>
-      <p className="lead">当前版本只包含构建、迁移、编排与健康检查，业务功能从 I1 开始交付。</p>
+    <div className="workbench">
+      <section className="panel">
+        <h1>客服工作台</h1>
+        <p className="lead">
+          当前租户 <strong data-testid="tenant-name">{session.tenant.name}</strong>
+          <span className="muted">（{session.tenant.code}）</span>
+          ，登录账号 <span data-testid="current-user">{session.user.email}</span>。
+        </p>
 
-      <dl className="status-list">
         <div className="status-row">
-          <dt>就绪状态</dt>
-          <dd>
-            <span className={`status-pill status-pill--${health.kind}`} data-testid="health-state">
-              {health.kind === 'loading' ? '检测中' : null}
-              {health.kind === 'ready' ? '就绪' : null}
-              {health.kind === 'unavailable' ? '未就绪' : null}
+          <span className="status-row__label">角色</span>
+          <ul className="tag-list" data-testid="role-list">
+            {session.roles.map((role) => (
+              <li key={role.code} className="tag">
+                {role.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="status-row">
+          <span className="status-row__label">项目</span>
+          {session.projects.length === 0 ? (
+            <span className="muted">未授予任何项目</span>
+          ) : (
+            <select
+              className="select"
+              data-testid="project-select"
+              value={projectId ?? ''}
+              onChange={(event) => setProjectId(event.target.value)}
+            >
+              {session.projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}（{project.code}）
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <nav className="menu" aria-label="功能菜单">
+          {canListTickets && projectId !== null ? (
+            <Link
+              className="menu-item"
+              to={`/tickets?projectId=${projectId}`}
+              data-testid="menu-tickets"
+            >
+              工单工作台
+            </Link>
+          ) : null}
+          {canViewInternalNote ? (
+            <span className="menu-item" data-testid="menu-internal-note">
+              内部备注
             </span>
-            {health.kind === 'unavailable' ? (
-              <span className="status-detail">{health.reason}</span>
-            ) : null}
-          </dd>
-        </div>
-        <div className="status-row">
-          <dt>迁移版本</dt>
-          <dd data-testid="migration-version">
-            {health.kind === 'ready' ? health.migrationVersion : '-'}
-          </dd>
-        </div>
-      </dl>
+          ) : null}
+          {canUpdateRefund ? (
+            <span className="menu-item" data-testid="menu-refund">
+              退款处理
+            </span>
+          ) : null}
+          {canReadAudit ? (
+            <span className="menu-item" data-testid="menu-audit">
+              审计日志
+            </span>
+          ) : null}
+        </nav>
+      </section>
 
-      <p className="hint">
-        前端路由回退验证入口：<Link to="/tickets/123">/tickets/123</Link>
-      </p>
-    </section>
+      <section className="panel">
+        <h2>字段权限</h2>
+        <p className="lead">字段可见性由服务端投影，前端隐藏只是体验优化。</p>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>读取</th>
+              <th>写入</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TICKET_SENSITIVE_FIELDS.map((field) => {
+              const rule = session.fields.find(
+                (item) => item.resource === 'ticket' && item.field === field,
+              );
+              return (
+                <tr key={field} data-testid={`field-${field}`}>
+                  <td>{FIELD_LABELS[field] ?? field}</td>
+                  <td>
+                    {rule === undefined || !rule.canRead
+                      ? '不可见'
+                      : rule.masked
+                        ? '脱敏'
+                        : '完整'}
+                  </td>
+                  <td>{rule?.canWrite === true ? '可写' : '只读'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
