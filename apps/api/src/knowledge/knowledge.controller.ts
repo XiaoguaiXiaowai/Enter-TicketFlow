@@ -52,7 +52,7 @@ export class KnowledgeController {
 
   @Get()
   @RequireProject()
-  @RequirePermission(RESOURCE.KB_ARTICLE, 'read')
+  @RequirePermission(RESOURCE.KB, 'read')
   @ApiOperation({ summary: '检索已发布文章（游标分页，返回高亮片段）' })
   @ApiOkResponse({ description: '命中标题或正文的已发布文章' })
   @ApiForbiddenResponse({ description: '缺少 kb:read 或项目访问权' })
@@ -65,7 +65,7 @@ export class KnowledgeController {
 
   @Post()
   @RequireProject()
-  @RequirePermission(RESOURCE.KB_ARTICLE, 'write')
+  @RequirePermission(RESOURCE.KB, 'write')
   @HttpCode(201)
   @ApiOperation({ summary: '新建知识库草稿（v1，未发布前不可检索）' })
   @ApiCreatedResponse({ description: '草稿创建成功' })
@@ -79,7 +79,7 @@ export class KnowledgeController {
 
   @Get(':id')
   @RequireProject()
-  @RequirePermission(RESOURCE.KB_ARTICLE, 'read')
+  @RequirePermission(RESOURCE.KB, 'read')
   @ApiOperation({ summary: '文章详情与历史版本' })
   @ApiOkResponse({ description: '按版本号倒序返回全部版本' })
   @ApiNotFoundResponse({ description: '文章不存在或不属于当前项目' })
@@ -92,7 +92,7 @@ export class KnowledgeController {
 
   @Patch(':id')
   @RequireProject()
-  @RequirePermission(RESOURCE.KB_ARTICLE, 'write')
+  @RequirePermission(RESOURCE.KB, 'write')
   @ApiOperation({ summary: '编辑产生新草稿版本，已发布版本保持不变' })
   @ApiOkResponse({ description: '返回包含新草稿版本的文章详情' })
   @ApiConflictResponse({ description: '文章已归档' })
@@ -106,7 +106,7 @@ export class KnowledgeController {
 
   @Post(':id/publish')
   @RequireProject()
-  @RequirePermission(RESOURCE.KB_ARTICLE, 'publish')
+  @RequirePermission(RESOURCE.KB, 'publish')
   @HttpCode(200)
   @ApiOperation({ summary: '发布最新版本（重复发布同一版本幂等）' })
   @ApiOkResponse({ description: '发布成功或幂等重放' })
@@ -122,7 +122,7 @@ export class KnowledgeController {
 
   @Delete(':id')
   @RequireProject()
-  @RequirePermission(RESOURCE.KB_ARTICLE, 'write')
+  @RequirePermission(RESOURCE.KB, 'write')
   @ApiOperation({ summary: '归档文章（保留已发布版本，不物理删除）' })
   @ApiOkResponse({ description: '归档成功' })
   async archive(
@@ -141,7 +141,7 @@ export class ReplyTemplatesController {
 
   @Get()
   @RequireProject()
-  @RequirePermission(RESOURCE.REPLY_TEMPLATE, 'use')
+  @RequirePermission(RESOURCE.TEMPLATE, 'use')
   @ApiOperation({ summary: '当前项目的回复模板列表' })
   @ApiOkResponse({ description: '按更新时间倒序返回模板与变量声明' })
   async list(@Req() req: AuthenticatedRequest): Promise<ReplyTemplateListResponse> {
@@ -150,7 +150,7 @@ export class ReplyTemplatesController {
 
   @Post(':id/render')
   @RequireProject()
-  @RequirePermission(RESOURCE.REPLY_TEMPLATE, 'use')
+  @RequirePermission(RESOURCE.TEMPLATE, 'use')
   @HttpCode(200)
   @ApiOperation({ summary: '渲染回复模板（无副作用，变量值 HTML 转义）' })
   @ApiOkResponse({ description: '渲染后的正文' })
