@@ -8,5 +8,6 @@ import { KnowledgeService } from './knowledge.service';
   imports: [AuditModule],
   controllers: [KnowledgeController, ReplyTemplatesController],
   providers: [KnowledgeService],
+  exports: [KnowledgeService],
 })
 export class KnowledgeModule {}

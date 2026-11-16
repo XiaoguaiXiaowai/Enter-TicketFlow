@@ -294,4 +294,49 @@ test.describe('@kb I3 知识库与回复模板', () => {
     await expect(reply).toHaveValue(/SO-2026-0001/);
     await expect(reply).toHaveValue(new RegExp(token));
   });
+
+  test('追加消息由服务端渲染模板，缺失变量返回 TEMPLATE_VARIABLE_MISSING', async ({ request }) => {
+    const agent = await loginViaApi(request, 'agent-a@example.com');
+    const templatesResponse = await request.get('/api/v1/reply-templates', {
+      headers: authHeaders(agent.accessToken),
+    });
+    expect(templatesResponse.status()).toBe(200);
+    const templates = (await templatesResponse.json()) as { items: ReplyTemplateFixture[] };
+    const template = templates.items.find((item) => item.name === '退款指引');
+    expect(template).toBeDefined();
+
+    const ticket = await createTicket(request, agent.accessToken, `模板消息-${randomUUID()}`);
+    const okResponse = await request.post(`/api/v1/tickets/${ticket.id}/messages`, {
+      headers: { ...authHeaders(agent.accessToken), 'Idempotency-Key': randomUUID() },
+      data: {
+        body: '占位正文',
+        visibility: 'PUBLIC',
+        templateId: template?.id,
+        templateVariables: { customer_name: '张先生', order_no: 'SO-2026-0002' },
+      },
+    });
+    expect(okResponse.status()).toBe(201);
+
+    const detailResponse = await request.get(`/api/v1/tickets/${ticket.id}`, {
+      headers: authHeaders(agent.accessToken),
+    });
+    expect(detailResponse.status()).toBe(200);
+    const detail = (await detailResponse.json()) as { messages: { body: string }[] };
+    const rendered = detail.messages.find((message) => message.body.includes('SO-2026-0002'));
+    expect(rendered?.body).toContain('张先生');
+    expect(rendered?.body).not.toContain('{{');
+
+    const missingResponse = await request.post(`/api/v1/tickets/${ticket.id}/messages`, {
+      headers: { ...authHeaders(agent.accessToken), 'Idempotency-Key': randomUUID() },
+      data: {
+        body: '占位正文',
+        visibility: 'PUBLIC',
+        templateId: template?.id,
+        templateVariables: { customer_name: '张先生' },
+      },
+    });
+    expect(missingResponse.status()).toBe(400);
+    const missingBody = (await missingResponse.json()) as { error: { code: string } };
+    expect(missingBody.error.code).toBe('TEMPLATE_VARIABLE_MISSING');
+  });
 });

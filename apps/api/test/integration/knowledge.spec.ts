@@ -337,6 +337,7 @@ describe('I3-T3 检索与项目/租户隔离', () => {
     const byBody = await knowledge.list(ctx(), { q: bodyKeyword });
     expect(byBody.items[0]?.id).toBe(created.id);
     expect(byBody.items[0]?.snippet).toContain(bodyKeyword);
+    expect(typeof byBody.items[0]?.score).toBe('number');
   });
 
   it('空关键词按更新时间倒序返回已发布列表，游标翻页不重复', async () => {

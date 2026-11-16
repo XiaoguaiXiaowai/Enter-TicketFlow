@@ -6,6 +6,7 @@ import {
   IsIn,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -126,6 +127,16 @@ export class AppendMessageDto {
   @ApiProperty({ enum: ['PUBLIC', 'INTERNAL'], example: 'PUBLIC' })
   @IsIn(['PUBLIC', 'INTERNAL'])
   visibility!: MessageVisibility;
+
+  @ApiPropertyOptional({ description: '回复模板 ID；提供时由服务端渲染正文并覆盖 body' })
+  @IsOptional()
+  @IsUUID()
+  templateId?: string;
+
+  @ApiPropertyOptional({ description: '模板变量，值必须是字符串' })
+  @IsOptional()
+  @IsObject()
+  templateVariables?: Record<string, unknown>;
 }
 
 export class ListTicketsQueryDto {

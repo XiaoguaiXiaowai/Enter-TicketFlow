@@ -127,7 +127,7 @@ graph TB
 | PostgreSQL | 主数据库 | 需要行级安全策略、`jsonb` 存审计快照、`tsvector` 做知识库检索、部分唯一索引做幂等，这些能力在单一存储内即可满足，减少组件 `[Expert judgment]` |
 | Prisma | ORM 与迁移 | 类型安全查询、迁移文件版本化；RLS 与复杂索引通过原生 SQL 迁移补充 `[Expert judgment]` |
 | React + TypeScript | 前端 | 与后端共享 DTO 类型定义，字段级权限的可见性枚举可由同一份策略生成 `[Expert judgment]` |
-| JWT + 服务端会话 | 认证 | 短期 access token 做无状态校验，refresh token 落库以便即时撤销与设备管理 `[Expert judgment]` |
+| JWT + 服务端会话 | 认证 | 短期 access token 做无状态校验，refresh token 落库以便即时撤销；设备列表与强制下线列入 I5 `[Expert judgment]` |
 | Docker Compose | 本地与预发编排 | 单机可拉起 web、api、postgres、redis、worker，环境一致，成本低于 Kubernetes `[Expert judgment]` |
 | GitHub Actions | 持续集成 | 与代码托管同源，矩阵跑单测、集成测试、Playwright，避免额外 CI 平台 `[Expert judgment]` |
 | Playwright | 端到端测试 | 多角色、多租户的权限场景需要在真实浏览器里验证"隐藏的按钮确实无法通过接口操作" `[Expert judgment]` |
@@ -143,7 +143,7 @@ graph TB
 
 refresh token 是随机不透明字符串，数据库只存其 SHA-256 摘要，字段包含 `user_id`、`tenant_id`、`expires_at`、`revoked_at`。每次刷新都轮换，旧摘要立即被新摘要覆盖；客户端若持旧 token 重试会得到 401，需要重新登录。浏览器端 access token 放内存，refresh token 放 `HttpOnly + Secure + SameSite=Lax` Cookie，前端不读取。
 
-会话表承担三件事：登出即时生效、设备列表与强制下线、`sv` 版本号校验。校验 JWT 签名之后，全局 Guard 比较 `sv` 与数据库中的会话版本，不一致则拒绝。这样即使 token 尚未过期，撤权也能立刻生效。
+当前版本会话表承担两件事：登出即时生效与 `sv` 版本号校验。设备列表、强制下线、改密与禁用成员即时失效列入 I5。校验 JWT 签名之后，全局 Guard 比较 `sv` 与数据库中的会话版本，不一致则拒绝。这样即使 token 尚未过期，撤权也能立刻生效。
 
 ### 3.2 请求上下文
 
@@ -387,7 +387,7 @@ Outbox 只承载"通知外部"这类可以延迟、可以重试的动作，例�
 | 方法与路径 | `PATCH /v1/tickets/{id}` |
 | 认证 | Bearer token；`X-Project-Id` 必填；字段级写权限 |
 | 请求头 | `If-Match: "<version>"` 必填，值为客户端上次读到的版本号 |
-| 请求体 | 允许字段：`status`、`assigneeId`、`priority`、`tags`。至少一个字段，未声明字段返回 400 |
+| 请求体 | 允许字段：`status`、`assigneeId`、`priority`、`tags`、`internalNote`、`refundAmount`、`customerPhone`。至少一个字段；未声明字段返回 400，字段级写权限不足返回 403 |
 | 成功响应 | `200 OK`，返回更新后的完整投影与新的 `version` |
 | 错误码 | `400 VALIDATION_FAILED`、`400 INVALID_TRANSITION`、`403 FIELD_DENIED`、`404 NOT_FOUND`、`409 VERSION_CONFLICT`、`412 PRECONDITION_REQUIRED` |
 | 并发语义 | `version` 与 `If-Match` 不一致直接拒绝，不做自动合并 |
@@ -529,7 +529,7 @@ erDiagram
 | `kb_articles` | `id`、`tenant_id`、`project_id`、`slug`、`published_version_id`、`version` | 唯一 `(project_id, slug)` |
 | `kb_article_versions` | `id`、`article_id`、`version_no`、`title`、`body`、`status`、`author_id` | 唯一 `(article_id, version_no)` |
 | `reply_templates` | `id`、`tenant_id`、`project_id`、`name`、`body`、`variables`、`version` | `variables` 为 `jsonb` 数组，声明可渲染变量 |
-| `sessions` | `id`、`user_id`、`tenant_id`、`refresh_token_hash`、`token_version`、`user_agent`、`ip`、`last_used_at`、`expires_at`、`revoked_at` | 用于撤销、设备列表与刷新轮换 |
+| `sessions` | `id`、`user_id`、`tenant_id`、`refresh_token_hash`、`token_version`、`user_agent`、`ip`、`last_used_at`、`expires_at`、`revoked_at` | 用于撤销与刷新轮换；设备列表列入 I5 |
 | `outbox_events` | `id`、`tenant_id`、`type`、`payload`、`status`、`attempts`、`available_at`、`created_at` | 索引 `(status, available_at)` |
 
 `tickets` 上的 `customer_phone` 与外部传入的自由文本字段在入库前做格式归一，查询时按字段策略决定是否脱敏输出。审计表如果是高写入量场景，可按 `created_at` 做月度分区，分区键加入主键；当前规模不预先分区，避免迁移复杂度 `[Hypothesis]`。
@@ -811,7 +811,7 @@ Redis 不可用时降级为进程内固定窗口计数，请求继续放行但�
 
 ### 10.4 数据保护
 
-客户手机号、邮箱等个人数据在数据库中按需加密存储，密钥由部署环境管理；导出功能单独授权并记录审计，导出文件带水印与有效期。租户注销时先冻结访问，再按保留期清理业务数据，审计记录保留至法定期限后归档。备份文件加密存储，恢复演练在隔离环境进行。
+当前版本客户手机号以明文存储，依赖数据库访问控制、RLS 与角色字段策略限制读取，尚未实现字段级加密（列入 I5）；邮箱仅用于登录账号，不对外返回。导出功能单独授权并记录审计，导出文件带水印与有效期。租户注销时先冻结访问，再按保留期清理业务数据，审计记录保留至法定期限后归档。备份文件加密存储，恢复演练在隔离环境进行。
 
 
 

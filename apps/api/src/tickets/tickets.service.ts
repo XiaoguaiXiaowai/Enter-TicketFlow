@@ -21,6 +21,7 @@ import { IamService } from '../iam/iam.service';
 import type { FieldRule } from '../iam/permission-cache.service';
 import { projectTicket } from '../iam/projection';
 import { IdempotencyService, type BeginResult } from '../idempotency/idempotency.service';
+import { KnowledgeService } from '../knowledge/knowledge.service';
 import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AppendMessageDto, CreateTicketDto, UpdateTicketDto } from './ticket.dto';
@@ -55,6 +56,7 @@ export class TicketsService {
     private readonly idempotency: IdempotencyService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly knowledge: KnowledgeService,
   ) {}
 
   async create(
@@ -302,6 +304,9 @@ export class TicketsService {
   ): Promise<MutationResult<AppendMessageResponse>> {
     const { actor, projectId } = ctx;
     assertUuid(id);
+    if (dto.templateId === undefined && dto.templateVariables !== undefined) {
+      throw AppException.validation('templateVariables 需要与 templateId 同时提供');
+    }
 
     const endpoint = `POST /v1/tickets/${id}/messages`;
     const requestHash = this.idempotency.hashRequest({
@@ -345,6 +350,16 @@ export class TicketsService {
         }
       }
 
+      const messageBody =
+        dto.templateId === undefined
+          ? dto.body
+          : await this.knowledge.renderForMessage(
+              tx,
+              projectId,
+              dto.templateId,
+              dto.templateVariables ?? {},
+            );
+
       const seqRows = await tx.$queryRaw<{ message_seq: number }[]>`
         UPDATE "tickets"
            SET "message_seq" = "message_seq" + 1
@@ -362,7 +377,7 @@ export class TicketsService {
           ticketId: id,
           seq,
           visibility: dto.visibility,
-          body: dto.body,
+          body: messageBody,
           authorId: actor.userId,
         },
       });

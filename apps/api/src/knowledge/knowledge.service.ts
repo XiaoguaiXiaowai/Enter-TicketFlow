@@ -44,6 +44,7 @@ interface KbSearchRow {
   version_no: number;
   title: string;
   body: string;
+  score: number;
 }
 
 interface LockedArticle {
@@ -71,10 +72,22 @@ export class KnowledgeService {
     const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor);
     const pattern = `%${escapeLike(q)}%`;
 
+    // 全文索引与 pg_trgm 并行：英文/空格分词走 tsquery，中文短语由 ILIKE 兜底。
+    const scoreExpr =
+      q === ''
+        ? Prisma.sql`0::real`
+        : Prisma.sql`ts_rank(
+            to_tsvector('simple', v.title || ' ' || v.body),
+            websearch_to_tsquery('simple', ${q})
+          )`;
     const searchClause =
       q === ''
         ? Prisma.empty
-        : Prisma.sql`AND (v.title ILIKE ${pattern} OR v.body ILIKE ${pattern})`;
+        : Prisma.sql`AND (
+            to_tsvector('simple', v.title || ' ' || v.body) @@ websearch_to_tsquery('simple', ${q})
+            OR v.title ILIKE ${pattern}
+            OR v.body ILIKE ${pattern}
+          )`;
     const cursorClause =
       cursor === null
         ? Prisma.empty
@@ -91,7 +104,8 @@ export class KnowledgeService {
                v.id     AS version_id,
                v.version_no,
                v.title,
-               v.body
+               v.body,
+               ${scoreExpr} AS score
           FROM kb_articles a
           JOIN kb_article_versions v ON v.id = a.published_version_id
          WHERE a.tenant_id = ${actor.tenantId}::uuid
@@ -119,6 +133,7 @@ export class KnowledgeService {
         publishedVersionId: row.published_version_id,
         updatedAt: row.updated_at.toISOString(),
         snippet: buildSnippet(row.body, q),
+        score: Number(row.score),
       })),
       nextCursor: hasMore && last !== undefined ? encodeCursor(last) : null,
     };
@@ -424,52 +439,82 @@ export class KnowledgeService {
     assertUuid(id);
     const { actor, projectId } = ctx;
 
-    const template = await this.prisma.withTenant(actor.tenantId, (tx) =>
-      tx.replyTemplate.findFirst({ where: { id, projectId, archivedAt: null } }),
-    );
-    if (template === null) {
-      throw AppException.notFound('TEMPLATE_NOT_FOUND', '回复模板不存在');
-    }
-
-    const declared = variablesOf(template.variables);
-    const entries = Object.entries(variables);
-    const nonString = entries.filter(([, value]) => typeof value !== 'string');
-    if (nonString.length > 0) {
-      throw AppException.validation(
-        '变量值必须是字符串',
-        nonString.map(([variable]) => ({ field: `variables.${variable}`, reason: 'NOT_STRING' })),
-      );
-    }
-    const values = Object.fromEntries(entries) as Record<string, string>;
-
-    const undeclared = Object.keys(values).filter((name) => !declared.includes(name));
-    if (undeclared.length > 0) {
-      throw new AppException(
-        HttpStatus.BAD_REQUEST,
-        'VARIABLE_NOT_ALLOWED',
-        `模板未声明变量: ${undeclared.join(', ')}`,
-        undeclared.map((variable) => ({ variable, reason: 'NOT_DECLARED' })),
-      );
-    }
-
-    const missing = declared.filter(
-      (name) => values[name] === undefined || values[name].trim() === '',
-    );
-    if (missing.length > 0) {
-      throw new AppException(
-        HttpStatus.BAD_REQUEST,
-        'VARIABLE_NOT_ALLOWED',
-        `缺少必填变量: ${missing.join(', ')}`,
-        missing.map((variable) => ({ variable, reason: 'MISSING' })),
-      );
-    }
-
-    return {
-      templateId: template.id,
-      body: sanitizeRichText(renderTemplateBody(template.body, declared, values)),
+    return this.prisma.withTenant(actor.tenantId, async (tx) => ({
+      templateId: id,
+      body: await renderTemplateFromStore(tx, projectId, id, variables, 'VARIABLE_NOT_ALLOWED'),
       missingVariables: [],
-    };
+    }));
   }
+
+  /**
+   * T5 追加消息使用：模板正文在服务端渲染后写入消息，
+   * 缺失变量按 5.4 契约返回 TEMPLATE_VARIABLE_MISSING。
+   */
+  async renderForMessage(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    templateId: string,
+    variables: Record<string, unknown>,
+  ): Promise<string> {
+    assertUuid(templateId);
+    return renderTemplateFromStore(
+      tx,
+      projectId,
+      templateId,
+      variables,
+      'TEMPLATE_VARIABLE_MISSING',
+    );
+  }
+}
+
+async function renderTemplateFromStore(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  templateId: string,
+  variables: Record<string, unknown>,
+  missingCode: 'VARIABLE_NOT_ALLOWED' | 'TEMPLATE_VARIABLE_MISSING',
+): Promise<string> {
+  const template = await tx.replyTemplate.findFirst({
+    where: { id: templateId, projectId, archivedAt: null },
+  });
+  if (template === null) {
+    throw AppException.notFound('TEMPLATE_NOT_FOUND', '回复模板不存在');
+  }
+
+  const declared = variablesOf(template.variables);
+  const entries = Object.entries(variables);
+  const nonString = entries.filter(([, value]) => typeof value !== 'string');
+  if (nonString.length > 0) {
+    throw AppException.validation(
+      '变量值必须是字符串',
+      nonString.map(([variable]) => ({ field: `variables.${variable}`, reason: 'NOT_STRING' })),
+    );
+  }
+  const values = Object.fromEntries(entries) as Record<string, string>;
+
+  const undeclared = Object.keys(values).filter((name) => !declared.includes(name));
+  if (undeclared.length > 0) {
+    throw new AppException(
+      HttpStatus.BAD_REQUEST,
+      'VARIABLE_NOT_ALLOWED',
+      `模板未声明变量: ${undeclared.join(', ')}`,
+      undeclared.map((variable) => ({ variable, reason: 'NOT_DECLARED' })),
+    );
+  }
+
+  const missing = declared.filter(
+    (name) => values[name] === undefined || values[name].trim() === '',
+  );
+  if (missing.length > 0) {
+    throw new AppException(
+      HttpStatus.BAD_REQUEST,
+      missingCode,
+      `缺少必填变量: ${missing.join(', ')}`,
+      missing.map((variable) => ({ variable, reason: 'MISSING' })),
+    );
+  }
+
+  return sanitizeRichText(renderTemplateBody(template.body, declared, values));
 }
 
 export function renderTemplateBody(

@@ -184,6 +184,8 @@ export interface UpdateTicketRequest {
 export interface AppendMessageRequest {
   body: string;
   visibility: MessageVisibility;
+  templateId?: string;
+  templateVariables?: Record<string, string>;
 }
 
 export interface AppendMessageResponse {
@@ -267,6 +269,7 @@ export interface KbArticleSummary {
   publishedVersionId: string | null;
   updatedAt: string;
   snippet: string | null;
+  score: number;
 }
 
 export interface KbArticleListResponse {
